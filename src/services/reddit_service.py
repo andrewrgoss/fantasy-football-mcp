@@ -30,6 +30,7 @@ async def analyze_reddit_sentiment(
     Returns:
         Dictionary with sentiment analysis results for each player
     """
+    analyzer = None
     try:
         # Import enhanced Reddit analyzer
         from src.agents.reddit_analyzer import RedditSentimentAgent
@@ -106,9 +107,6 @@ async def analyze_reddit_sentiment(
                 "enhanced_analyzer": True,  # Flag to indicate enhanced version
             }
 
-        # Clean up
-        await analyzer.cleanup()
-
     except ImportError as e:
         # Fallback to basic implementation if enhanced analyzer not available
         return await _analyze_reddit_sentiment_fallback(
@@ -119,6 +117,9 @@ async def analyze_reddit_sentiment(
         return await _analyze_reddit_sentiment_fallback(
             players, time_window_hours, f"Enhanced analyzer failed: {e}"
         )
+    finally:
+        if analyzer is not None:
+            await analyzer.cleanup()
 
 
 async def _analyze_reddit_sentiment_fallback(
@@ -145,6 +146,8 @@ async def _analyze_reddit_sentiment_fallback(
 
     try:
         # Initialize Reddit client
+        from src.agents.reddit_analyzer import INITIAL_SUBREDDITS, _is_removed_post
+
         reddit = praw.Reddit(
             client_id=REDDIT_CLIENT_ID,
             client_secret=REDDIT_CLIENT_SECRET,
@@ -160,14 +163,13 @@ async def _analyze_reddit_sentiment_fallback(
             "fallback_reason": error_reason,
         }
 
-        subreddits = ["fantasyfootball", "DynastyFF", "Fantasy_Football", "nfl"]
+        subreddits = [entry["name"] for entry in INITIAL_SUBREDDITS]
 
         for player in players:
             player_sentiments = []
             total_posts = 0
             total_engagement = 0
             injury_mentions = 0
-            relevant_comments = []
 
             # Search across subreddits
             for subreddit_name in subreddits:
@@ -176,6 +178,9 @@ async def _analyze_reddit_sentiment_fallback(
                     posts = list(subreddit.search(player, time_filter="week", limit=5))
 
                     for post in posts:
+                        if _is_removed_post(post):
+                            continue
+
                         total_posts += 1
                         total_engagement += post.score + post.num_comments
 
@@ -198,15 +203,6 @@ async def _analyze_reddit_sentiment_fallback(
                         if any(keyword.lower() in text.lower() for keyword in injury_keywords):
                             injury_mentions += 1
 
-                        # Get top comments
-                        if post.score > 10:
-                            relevant_comments.append(
-                                {
-                                    "text": post.title[:100],
-                                    "score": post.score,
-                                    "sentiment": sentiment,
-                                }
-                            )
                 except Exception:
                     continue
 
@@ -233,9 +229,8 @@ async def _analyze_reddit_sentiment_fallback(
                 "total_engagement": total_engagement,
                 "injury_mentions": injury_mentions,
                 "hype_score": round(hype_score, 3),
-                "top_comments": sorted(relevant_comments, key=lambda x: x["score"], reverse=True)[
-                    :3
-                ],
+                # Raw Reddit text is intentionally not returned or retained.
+                "top_comments": [],
             }
 
         # Add comparison recommendation if multiple players

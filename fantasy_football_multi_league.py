@@ -17,6 +17,17 @@ from mcp.types import TextContent, Tool
 from src.api import get_access_token, refresh_yahoo_token, set_access_token, yahoo_api_call
 from src.parsers import parse_team_roster, parse_yahoo_free_agent_players
 from src.services import analyze_reddit_sentiment
+from src.auction_prep import (
+    evaluate_keeper,
+    apply_fantasypros_projections,
+    load_historical_auction_files,
+    load_league_profile,
+    load_market_values_csv,
+    load_player_projections_csv,
+    project_auction_values,
+    summarize_historical_auction,
+)
+from src.fantasypros_api import FantasyProsClient, normalize_player_signals
 
 # Import rate limiting and caching utilities
 from src.api.yahoo_utils import rate_limiter, response_cache
@@ -342,6 +353,124 @@ async def get_waiver_wire_players(
         return players
     except Exception:
         return []
+
+
+async def handle_ff_get_auction_profile(arguments: dict) -> dict:
+    """Return a safe summary of the caller's local league profile."""
+
+    try:
+        profile = load_league_profile(arguments.get("profile_path"))
+        return {"status": "success", "profile": profile.summary(include_identity=False)}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
+async def handle_ff_project_auction_values(arguments: dict) -> dict:
+    """Project auction values from local projections and optional market signals."""
+
+    projection_path = arguments.get("projection_path")
+    if not projection_path:
+        return {"status": "error", "message": "projection_path is required"}
+    try:
+        profile = load_league_profile(arguments.get("profile_path"))
+        projections = load_player_projections_csv(str(projection_path), profile)
+        fantasypros_meta = {"enabled": False}
+        if arguments.get("use_fantasypros", False):
+            requested_scoring = str(arguments.get("fantasypros_scoring", "")).strip().upper()
+            reception_points = profile.summary()["reception_points"]
+            scoring = requested_scoring or (
+                "PPR" if reception_points >= 0.75 else "HALF" if reception_points >= 0.25 else "STD"
+            )
+            season = int(arguments.get("fantasypros_season", profile.season))
+            client = FantasyProsClient()
+            projection_payload = await client.get_projections(
+                season,
+                scoring=scoring,
+                position=arguments.get("fantasypros_position"),
+            )
+            fantasypros_signals = normalize_player_signals(projection_payload)
+            if arguments.get("fantasypros_include_rankings", True):
+                ranking_payload = await client.get_consensus_rankings(
+                    season,
+                    scoring=scoring,
+                    position=arguments.get("fantasypros_position"),
+                )
+                ranking_signals = normalize_player_signals(ranking_payload)
+                for name, ranking in ranking_signals.items():
+                    fantasypros_signals.setdefault(name, {}).update(
+                        {key: value for key, value in ranking.items() if value not in (None, "")}
+                    )
+            projections = apply_fantasypros_projections(
+                projections,
+                fantasypros_signals,
+                weight=float(arguments.get("fantasypros_weight", 0.30)),
+            )
+            fantasypros_meta = {
+                "enabled": True,
+                "season": season,
+                "scoring": scoring,
+                "signals": len(fantasypros_signals),
+                "projection_weight": float(arguments.get("fantasypros_weight", 0.30)),
+            }
+        market_path = arguments.get("market_values_path")
+        market_values = load_market_values_csv(str(market_path)) if market_path else None
+        historical_path = arguments.get("historical_path")
+        historical_records = (
+            load_historical_auction_files([str(historical_path)]) if historical_path else None
+        )
+        values = project_auction_values(
+            projections,
+            profile,
+            market_values=market_values,
+            historical_records=historical_records,
+            sentiment=arguments.get("sentiment"),
+            market_weight=float(arguments.get("market_weight", 0.25)),
+            historical_weight=float(arguments.get("historical_weight", 0.15)),
+            max_sentiment_adjustment=float(arguments.get("max_sentiment_adjustment", 0.08)),
+            max_price_fraction=float(arguments.get("max_price_fraction", 0.35)),
+        )
+        limit = max(1, min(500, int(arguments.get("limit", 50))))
+        return {
+            "status": "success",
+            "profile": profile.summary(include_identity=False),
+            "fantasypros": fantasypros_meta,
+            "player_count": len(values),
+            "values": [value.as_dict() for value in values[:limit]],
+        }
+    except Exception as exc:
+        return {"status": "error", "message": f"Auction value projection failed: {exc}"}
+
+
+async def handle_ff_summarize_historical_auction(arguments: dict) -> dict:
+    """Summarize exported auction history by season and position."""
+
+    historical_path = arguments.get("historical_path")
+    if not historical_path:
+        return {"status": "error", "message": "historical_path is required"}
+    try:
+        records = load_historical_auction_files([str(historical_path)])
+        return {
+            "status": "success",
+            "summary": summarize_historical_auction(records),
+        }
+    except Exception as exc:
+        return {"status": "error", "message": f"Historical auction summary failed: {exc}"}
+
+
+async def handle_ff_evaluate_keeper(arguments: dict) -> dict:
+    """Evaluate keeper surplus without requiring a live Yahoo connection."""
+
+    try:
+        result = evaluate_keeper(
+            float(arguments["projected_auction_value"]),
+            float(arguments["keeper_cost"]),
+            risk_penalty=float(arguments.get("risk_penalty", 0.0)),
+            minimum_surplus=float(arguments.get("minimum_surplus", 3.0)),
+            minimum_roi=float(arguments.get("minimum_roi", 0.10)),
+        )
+        return {"status": "success", **result}
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"status": "error", "message": f"Keeper evaluation failed: {exc}"}
 
 
 async def get_draft_rankings(
@@ -840,6 +969,163 @@ async def list_tools() -> list[Tool]:
         ),
     ]
 
+    auction_tools = [
+        Tool(
+            name="ff_get_auction_profile",
+            description=(
+                "Validate and summarize a local league profile for offline auction analysis. "
+                "The profile is read from config/league_profile.local.json by default."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "profile_path": {
+                        "type": "string",
+                        "description": "Optional path to a private local league-profile JSON file",
+                    }
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="ff_project_auction_values",
+            description=(
+                "Calculate league-specific auction values from a local player-projection CSV, "
+                "optional market values, and optional sentiment signals."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "projection_path": {
+                        "type": "string",
+                        "description": "Path to a player projection CSV",
+                    },
+                    "profile_path": {
+                        "type": "string",
+                        "description": "Optional path to a private local league-profile JSON file",
+                    },
+                    "market_values_path": {
+                        "type": "string",
+                        "description": "Optional path to a pre-draft auction-value CSV",
+                    },
+                    "historical_path": {
+                        "type": "string",
+                        "description": "Optional path to a historical auction-results CSV or directory of CSVs",
+                    },
+                    "sentiment": {
+                        "type": "object",
+                        "description": "Optional player-name map with score/confidence/engagement fields",
+                        "additionalProperties": {"type": "object"},
+                    },
+                    "use_fantasypros": {
+                        "type": "boolean",
+                        "description": "Opt in to FantasyPros projections/rankings (requires FANTASYPROS_API_KEY)",
+                        "default": False,
+                    },
+                    "fantasypros_season": {
+                        "type": "integer",
+                        "description": "FantasyPros NFL season (defaults to the local profile season)",
+                    },
+                    "fantasypros_scoring": {
+                        "type": "string",
+                        "description": "FantasyPros scoring code, such as PPR, HALF, or STD",
+                    },
+                    "fantasypros_position": {
+                        "type": "string",
+                        "description": "Optional FantasyPros position filter",
+                    },
+                    "fantasypros_include_rankings": {
+                        "type": "boolean",
+                        "description": "Also request FantasyPros consensus rankings/ADP (default: true)",
+                        "default": True,
+                    },
+                    "fantasypros_weight": {
+                        "type": "number",
+                        "description": "Weight for FantasyPros projected points from 0 to 1 (default: 0.30)",
+                        "default": 0.30,
+                    },
+                    "market_weight": {
+                        "type": "number",
+                        "description": "Weight for supplied market values from 0 to 1 (default: 0.25)",
+                        "default": 0.25,
+                    },
+                    "historical_weight": {
+                        "type": "number",
+                        "description": "Weight for matched historical player prices from 0 to 1 (default: 0.15)",
+                        "default": 0.15,
+                    },
+                    "max_sentiment_adjustment": {
+                        "type": "number",
+                        "description": "Maximum sentiment adjustment fraction (default: 0.08)",
+                        "default": 0.08,
+                    },
+                    "max_price_fraction": {
+                        "type": "number",
+                        "description": "Fallback maximum player price as a fraction of the auction budget (default: 0.35)",
+                        "default": 0.35,
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of ranked players to return (default: 50)",
+                        "default": 50,
+                    },
+                },
+                "required": ["projection_path"],
+            },
+        ),
+        Tool(
+            name="ff_summarize_historical_auction",
+            description=(
+                "Summarize exported auction history by season and position without calling Yahoo."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "historical_path": {
+                        "type": "string",
+                        "description": "Path to a historical auction-results CSV or directory of CSVs",
+                    }
+                },
+                "required": ["historical_path"],
+            },
+        ),
+        Tool(
+            name="ff_evaluate_keeper",
+            description=(
+                "Evaluate keeper surplus from projected auction value, keeper cost, and optional risk."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "projected_auction_value": {
+                        "type": "number",
+                        "description": "Projected player auction value",
+                    },
+                    "keeper_cost": {
+                        "type": "number",
+                        "description": "Player's keeper cost",
+                    },
+                    "risk_penalty": {
+                        "type": "number",
+                        "description": "Optional dollar penalty for injury, role, or uncertainty risk",
+                        "default": 0,
+                    },
+                    "minimum_surplus": {
+                        "type": "number",
+                        "description": "Minimum risk-adjusted surplus required to keep (default: 3)",
+                        "default": 3,
+                    },
+                    "minimum_roi": {
+                        "type": "number",
+                        "description": "Minimum return on keeper cost (default: 0.10)",
+                        "default": 0.10,
+                    },
+                },
+                "required": ["projected_auction_value", "keeper_cost"],
+            },
+        ),
+    ]
+
     # Add draft tools if available
     if DRAFT_AVAILABLE:
         draft_tools = [
@@ -915,9 +1201,9 @@ async def list_tools() -> list[Tool]:
                 },
             ),
         ]
-        return base_tools + draft_tools
+        return base_tools + draft_tools + auction_tools
 
-    return base_tools
+    return base_tools + auction_tools
 
 
 TOOL_HANDLERS: dict[str, Callable[[dict], Awaitable[dict]]] = {
@@ -940,6 +1226,10 @@ TOOL_HANDLERS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "ff_get_draft_recommendation": handle_ff_get_draft_recommendation,
     "ff_analyze_draft_state": handle_ff_analyze_draft_state,
     "ff_analyze_reddit_sentiment": handle_ff_analyze_reddit_sentiment,
+    "ff_get_auction_profile": handle_ff_get_auction_profile,
+    "ff_project_auction_values": handle_ff_project_auction_values,
+    "ff_summarize_historical_auction": handle_ff_summarize_historical_auction,
+    "ff_evaluate_keeper": handle_ff_evaluate_keeper,
 }
 
 

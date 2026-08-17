@@ -103,6 +103,19 @@ _TOOL_PROMPTS: Dict[str, str] = {
         "Summarize recent Reddit sentiment and engagement around one or more "
         "players to complement scouting insights."
     ),
+    "ff_get_auction_profile": (
+        "Validate and summarize a local league profile for offline auction analysis."
+    ),
+    "ff_project_auction_values": (
+        "Calculate league-specific auction values from local projections, market values, "
+        "and optional sentiment signals."
+    ),
+    "ff_summarize_historical_auction": (
+        "Summarize exported auction history by season and position without calling Yahoo."
+    ),
+    "ff_evaluate_keeper": (
+        "Evaluate keeper surplus from projected auction value, keeper cost, and optional risk."
+    ),
 }
 
 
@@ -781,6 +794,111 @@ async def ff_analyze_reddit_sentiment(
         ctx=ctx,
         players=list(players),
         time_window_hours=time_window_hours,
+    )
+
+
+@server.tool(
+    name="ff_get_auction_profile",
+    description="Validate and summarize a local league profile for offline auction analysis.",
+    meta=_tool_meta("ff_get_auction_profile"),
+)
+async def ff_get_auction_profile(
+    ctx: Context,
+    profile_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    return await _call_legacy_tool(
+        "ff_get_auction_profile",
+        ctx=ctx,
+        profile_path=profile_path,
+    )
+
+
+@server.tool(
+    name="ff_project_auction_values",
+    description=(
+        "Calculate league-specific auction values from a local projection CSV, optional "
+        "market values, and optional sentiment signals."
+    ),
+    meta=_tool_meta("ff_project_auction_values"),
+)
+async def ff_project_auction_values(
+    ctx: Context,
+    projection_path: str,
+    profile_path: Optional[str] = None,
+    market_values_path: Optional[str] = None,
+    historical_path: Optional[str] = None,
+    sentiment: Optional[Dict[str, Dict[str, float]]] = None,
+    use_fantasypros: bool = False,
+    fantasypros_season: Optional[int] = None,
+    fantasypros_scoring: Optional[str] = None,
+    fantasypros_position: Optional[str] = None,
+    fantasypros_include_rankings: bool = True,
+    fantasypros_weight: float = 0.30,
+    market_weight: float = 0.25,
+    historical_weight: float = 0.15,
+    max_sentiment_adjustment: float = 0.08,
+    max_price_fraction: float = 0.35,
+    limit: int = 50,
+) -> Dict[str, Any]:
+    return await _call_legacy_tool(
+        "ff_project_auction_values",
+        ctx=ctx,
+        projection_path=projection_path,
+        profile_path=profile_path,
+        market_values_path=market_values_path,
+        historical_path=historical_path,
+        sentiment=sentiment,
+        use_fantasypros=use_fantasypros,
+        fantasypros_season=fantasypros_season,
+        fantasypros_scoring=fantasypros_scoring,
+        fantasypros_position=fantasypros_position,
+        fantasypros_include_rankings=fantasypros_include_rankings,
+        fantasypros_weight=fantasypros_weight,
+        market_weight=market_weight,
+        historical_weight=historical_weight,
+        max_sentiment_adjustment=max_sentiment_adjustment,
+        max_price_fraction=max_price_fraction,
+        limit=limit,
+    )
+
+
+@server.tool(
+    name="ff_summarize_historical_auction",
+    description="Summarize exported auction history by season and position.",
+    meta=_tool_meta("ff_summarize_historical_auction"),
+)
+async def ff_summarize_historical_auction(
+    ctx: Context,
+    historical_path: str,
+) -> Dict[str, Any]:
+    return await _call_legacy_tool(
+        "ff_summarize_historical_auction",
+        ctx=ctx,
+        historical_path=historical_path,
+    )
+
+
+@server.tool(
+    name="ff_evaluate_keeper",
+    description="Evaluate keeper surplus from projected auction value, keeper cost, and optional risk.",
+    meta=_tool_meta("ff_evaluate_keeper"),
+)
+async def ff_evaluate_keeper(
+    ctx: Context,
+    projected_auction_value: float,
+    keeper_cost: float,
+    risk_penalty: float = 0.0,
+    minimum_surplus: float = 3.0,
+    minimum_roi: float = 0.10,
+) -> Dict[str, Any]:
+    return await _call_legacy_tool(
+        "ff_evaluate_keeper",
+        ctx=ctx,
+        projected_auction_value=projected_auction_value,
+        keeper_cost=keeper_cost,
+        risk_penalty=risk_penalty,
+        minimum_surplus=minimum_surplus,
+        minimum_roi=minimum_roi,
     )
 
 
@@ -1708,6 +1826,10 @@ __all__ = [
     "ff_get_draft_recommendation",
     "ff_analyze_draft_state",
     "ff_analyze_reddit_sentiment",
+    "ff_get_auction_profile",
+    "ff_project_auction_values",
+    "ff_summarize_historical_auction",
+    "ff_evaluate_keeper",
     # Prompts - Pre-built prompt templates for LLMs
     "analyze_roster_strengths",
     "draft_strategy_advice",

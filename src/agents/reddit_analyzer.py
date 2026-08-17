@@ -16,6 +16,57 @@ from dataclasses import dataclass, field
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor
 
+# Keep the initial Reddit scope narrow and aligned with the personal fantasy
+# football use case. Additional communities should only be added after an
+# approved use-case review.
+INITIAL_SUBREDDITS = (
+    {"name": "fantasyfootball", "weight": 1.0, "priority": 1},
+    {"name": "DynastyFF", "weight": 0.8, "priority": 2},
+)
+REMOVED_CONTENT_MARKERS = frozenset({"[deleted]", "[removed]"})
+_MISSING = object()
+
+
+def _is_removed_marker(value: Any) -> bool:
+    """Return whether Reddit has replaced a value with a removal marker."""
+    return isinstance(value, str) and value.strip().lower() in REMOVED_CONTENT_MARKERS
+
+
+def _has_live_author(item: Any) -> bool:
+    """Fail closed when an item has no live author (deleted account/content)."""
+    try:
+        author = getattr(item, "author", _MISSING)
+        if author is _MISSING or author is None:
+            return False
+        author_name = getattr(author, "name", None)
+        return (
+            isinstance(author_name, str)
+            and bool(author_name.strip())
+            and not _is_removed_marker(author_name)
+        )
+    except Exception:
+        return False
+
+
+def _is_removed_post(post: Any) -> bool:
+    """Return whether a post must be excluded from analysis and output."""
+    if getattr(post, "removed_by_category", None):
+        return True
+    if _is_removed_marker(getattr(post, "title", None)):
+        return True
+    if _is_removed_marker(getattr(post, "selftext", None)):
+        return True
+    return not _has_live_author(post)
+
+
+def _is_removed_comment(comment: Any) -> bool:
+    """Return whether a comment must be excluded from analysis and output."""
+    body = getattr(comment, "body", None)
+    if not isinstance(body, str) or not body.strip() or _is_removed_marker(body):
+        return True
+    return not _has_live_author(comment)
+
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -197,13 +248,9 @@ class RedditSentimentAgent:
             "day-to-day",
         ]
 
-        # Subreddits to search with priority order
-        self.subreddits = [
-            {"name": "fantasyfootball", "weight": 1.0, "priority": 1},
-            {"name": "DynastyFF", "weight": 0.8, "priority": 2},
-            {"name": "Fantasy_Football", "weight": 0.7, "priority": 3},
-            {"name": "nfl", "weight": 0.5, "priority": 4},
-        ]
+        # Subreddits to search with priority order. Keep this list narrow and
+        # aligned with the approved use case.
+        self.subreddits = [dict(entry) for entry in INITIAL_SUBREDDITS]
 
         # Cache for sentiment analysis to avoid re-processing
         self.sentiment_cache = {}
@@ -282,6 +329,7 @@ class RedditSentimentAgent:
             result.fallback_used = True
             return await self._generate_fallback_sentiment(player_name, result)
 
+        reddit_data = None
         try:
             # Rate limiting check
             await self._wait_for_rate_limit()
@@ -349,6 +397,15 @@ class RedditSentimentAgent:
             result.errors.append(f"Unexpected error: {str(e)}")
             result.fallback_used = True
             return await self._generate_fallback_sentiment(player_name, result)
+        finally:
+            # Do not retain Reddit content or content-derived cache keys after
+            # the current analysis request completes.
+            if isinstance(reddit_data, dict):
+                for key in ("posts", "comments"):
+                    values = reddit_data.get(key)
+                    if isinstance(values, list):
+                        values.clear()
+            self.sentiment_cache.clear()
 
     async def _fetch_reddit_data_async(
         self, player_name: str, time_window_hours: int, max_posts: int
@@ -386,6 +443,9 @@ class RedditSentimentAgent:
                     stats["subreddits_searched"] += 1
 
                     for post in posts:
+                        if _is_removed_post(post):
+                            continue
+
                         # Check if post is within time window
                         post_time = datetime.fromtimestamp(post.created_utc)
                         if post_time < cutoff_time:
@@ -404,7 +464,6 @@ class RedditSentimentAgent:
                                 "created_utc": post.created_utc,
                                 "subreddit": subreddit_name,
                                 "weight": subreddit_weight,
-                                "url": post.url,
                             }
                         )
 
@@ -418,6 +477,9 @@ class RedditSentimentAgent:
                             for comment in post.comments.list()[:10]:  # Top 10 comments
                                 if comment_count >= 10:  # Limit comments per post
                                     break
+
+                                if _is_removed_comment(comment):
+                                    continue
 
                                 if player_name.lower() in comment.body.lower():
                                     comments_data.append(
@@ -471,7 +533,6 @@ class RedditSentimentAgent:
         all_content = []
         weighted_sentiments = []
         injury_mentions = 0
-        top_comments = []
 
         # Process posts
         for post in reddit_data["posts"]:
@@ -494,16 +555,6 @@ class RedditSentimentAgent:
                 "subreddit": comment["subreddit"],
             }
             all_content.append(content_data)
-
-            # Store top comments
-            if comment["score"] > 5:
-                top_comments.append(
-                    {
-                        "text": comment["text"][:200],
-                        "score": comment["score"],
-                        "subreddit": comment["subreddit"],
-                    }
-                )
 
         # Analyze sentiment for each piece of content
         sentiment_breakdown = {"positive": 0, "negative": 0, "neutral": 0}
@@ -560,15 +611,13 @@ class RedditSentimentAgent:
             consensus = None
             confidence = 0.0
 
-        # Sort top comments by score
-        top_comments.sort(key=lambda x: x["score"], reverse=True)
-
         return {
             "overall_sentiment": overall_sentiment,
             "sentiment_breakdown": sentiment_breakdown,
             "injury_mentions": injury_mentions,
             "hype_score": hype_score,
-            "top_comments": top_comments[:5],
+            # Raw Reddit text is intentionally not returned or retained.
+            "top_comments": [],
             "consensus": consensus,
             "confidence": confidence,
         }

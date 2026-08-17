@@ -1,0 +1,71 @@
+{
+  "season": 2026,
+  "platform": "Yahoo Fantasy Football",
+  "league": {
+    "id": "replace-with-league-id",
+    "name": "Example League",
+    "teams": 12,
+    "scoring_type": "head_to_head",
+    "draft_type": "live_salary_cap",
+    "auction_budget": 200,
+    "cash_league": false,
+    "start_scoring_week": 1
+  },
+  "roster": {
+    "starters": {
+      "QB": 1,
+      "WR": 2,
+      "RB": 2,
+      "TE": 1,
+      "W/R/T": 1,
+      "DEF": 1
+    },
+    "bench": 6,
+    "injured_reserve": 2
+  },
+  "scoring": {
+    "fractional_points": true,
+    "negative_points": true,
+    "offense": {
+      "passing_yards_per_point": 25,
+      "passing_touchdown": 4,
+      "interception": -2,
+      "rushing_yards_per_point": 10,
+      "rushing_touchdown": 6,
+      "reception": 1,
+      "receiving_yards_per_point": 10,
+      "receiving_touchdown": 6,
+      "return_touchdown": 6,
+      "two_point_conversion": 2,
+      "fumble_lost": -2,
+      "offensive_fumble_return_touchdown": 6
+    },
+    "defense_special_teams": {
+      "sack": 1,
+      "interception": 2,
+      "fumble_recovery": 2,
+      "touchdown": 6,
+      "safety": 2,
+      "blocked_kick": 2,
+      "kickoff_punt_return_touchdown": 6,
+      "points_allowed": {
+        "0": 10,
+        "1-6": 8,
+        "7-13": 6,
+        "14-20": 4,
+        "21-27": 1,
+        "28-34": -2,
+        "35+": -5
+      },
+      "fourth_down_stop": 1,
+      "extra_point_returned": 2
+    }
+  },
+  "league_management": {
+    "playoffs": {
+      "teams": 6,
+      "weeks": [15, 16, 17],
+      "reseed": true
+    }
+  }
+}

@@ -19,7 +19,7 @@ dist/
 *.egg-info/
 .pytest_cache/
 
-# Tests (excluded from public repository)
+# Tests (excluded by default; explicitly approved public tests are re-included below)
 tests/
 test_*.py
 *_test.py
@@ -48,6 +48,8 @@ coverage.xml
 .auth/
 token.json
 yahoo_token.json
+.yahoo_token.json
+.py.json
 *.token
 
 # Development and debug files
@@ -72,6 +74,10 @@ enhanced_mcp_*.py
 !test_enhancement_layer.py
 !test_real_data.py
 !demo_enhancement_layer.py
+!tests/
+!tests/unit/
+!tests/unit/test_auction_prep.py
+!tests/unit/test_reddit_privacy.py
 
 # Temporary and analysis files
 temp/
@@ -89,6 +95,7 @@ yahoo_teams_raw.json
 # Config files with sensitive data
 claude_desktop_config.json
 mcp_config*.json
+config/*.local.json
 
 # Temporary files
 *.tmp

@@ -87,24 +87,27 @@ YAHOO_ACCESS_TOKEN=your_access_token_here
 YAHOO_REFRESH_TOKEN=your_refresh_token_here
 YAHOO_GUID=your_yahoo_guid_here
 
-# Reddit API Credentials (Optional - for sentiment analysis)
+# Reddit API Credentials (Optional - explicit approval required)
 # See docs/REDDIT_API_SETUP.md for setup instructions
 REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_client_secret
 REDDIT_USERNAME=your_reddit_username
 ```
 
-**Note**: Since this is a private repository, the `.env` file is tracked for backup purposes.
+**Note**: This repository is public. Never commit `.env`, OAuth credentials, or
+generated token files; keep them local and use the ignored `.env` file only.
 
 ### 4.1 Reddit API Setup (Optional)
 
 If you want to use Reddit sentiment analysis features (`ff_analyze_reddit_sentiment`), you'll need Reddit API credentials:
 
 1. See the detailed guide: [Reddit API Setup Guide](docs/REDDIT_API_SETUP.md)
-2. Create a Reddit application at https://www.reddit.com/prefs/apps
-3. Add the credentials to your `.env` file as shown above
+2. Request and receive explicit Reddit Data API approval before making requests
+3. Register the app/profile as Reddit directs after approval
+4. Add the credentials to your local `.env` file as shown above
 
-The app will work without Reddit credentials, but sentiment analysis will use fallback methods.
+The app will work without Reddit credentials, but Reddit sentiment analysis will
+remain unavailable until approval and credentials are configured.
 
 ## Step 5: Claude Desktop Configuration
 
