@@ -105,8 +105,8 @@ The enhancement layer is **non-breaking** and automatically applies to:
 
 ### Quick Start
 ```bash
-git clone https://github.com/derekrbreese/fantasy-football-mcp-public.git
-cd fantasy-football-mcp-public
+git clone https://github.com/andrewrgoss/fantasy-football-mcp.git
+cd fantasy-football-mcp
 pip install -r requirements.txt
 ```
 
@@ -292,6 +292,40 @@ cp config/league_profile.example.json config/league_profile.local.json
 team count, auction budget, scoring rules, starting slots, bench, injured reserve,
 and optional playoff settings. The server also accepts a custom profile path or
 the `FANTASY_LEAGUE_PROFILE` environment variable.
+
+### Yahoo scraper exports (local fallback)
+
+Yahoo Fantasy Sports API approval is not required for the offline workflow. If
+you already use a local browser-based Yahoo scraper, its CSV exports can be
+passed directly to the auction tools. The companion
+`yahoo-fantasy-fball-scraper` project emits the supported formats:
+
+| Local export | Tool argument |
+| --- | --- |
+| Player season projections (`*_yahoo_player_season_projections.csv`) | `projection_path` |
+| Pre-draft auction values (`*_yahoo_predraft_auction_values.csv`) | `market_values_path` |
+| Historical or current auction results (`yahoo_<league>_<year>_draft_results.csv`) | `historical_path` |
+
+Run that scraper locally, keep its CSVs in a private directory outside this
+repository, and pass the resulting paths to `ff_project_auction_values` or
+`ff_summarize_historical_auction`. The loader recalculates points from raw
+stat columns using the private league profile, so the same export can be used
+for different scoring formats. No Yahoo password, browser session, league
+identifier, or scraped CSV should be committed to the public repository.
+
+For example, the auction projection call can combine all three local Yahoo
+exports with the optional FantasyPros API and still run without Reddit access:
+
+```text
+projection_path: /private/path/season_projections.csv
+market_values_path: /private/path/predraft_auction_values.csv
+historical_path: /private/path/historical_exports/
+use_fantasypros: true
+```
+
+The scraper's historical export is also accepted as a directory, allowing
+multiple seasons to be summarized together. Reddit sentiment remains an
+optional input and is not required for any of these local calculations.
 
 The offline MCP tools are:
 
