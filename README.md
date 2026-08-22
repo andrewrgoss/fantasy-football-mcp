@@ -306,12 +306,15 @@ passed directly to the auction tools. The companion
 | Pre-draft auction values (`*_yahoo_predraft_auction_values.csv`) | `market_values_path` |
 | Historical or current auction results (`yahoo_<league>_<year>_draft_results.csv`) | `historical_path` |
 
-Run that scraper locally, keep its CSVs in a private directory outside this
-repository, and pass the resulting paths to `ff_project_auction_values` or
-`ff_summarize_historical_auction`. The loader recalculates points from raw
-stat columns using the private league profile, so the same export can be used
-for different scoring formats. No Yahoo password, browser session, league
-identifier, or scraped CSV should be committed to the public repository.
+Run that scraper locally, keep its CSVs in a private directory, and pass the
+resulting paths to `ff_project_auction_values` or
+`ff_summarize_historical_auction`. The ignored `data/local/` directory is
+available for local exports when keeping them alongside this checkout; an
+external private directory is also fine. The loader recalculates points from
+raw stat columns using the private league profile, so the same export can be
+used for different scoring formats. No Yahoo password, browser session,
+league identifier, or scraped CSV should be committed to the public
+repository.
 
 For example, the auction projection call can combine all three local Yahoo
 exports with the optional FantasyPros API and still run without Reddit access:

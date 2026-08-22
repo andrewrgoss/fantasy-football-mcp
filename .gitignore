@@ -97,6 +97,9 @@ claude_desktop_config.json
 mcp_config*.json
 config/*.local.json
 
+# Private Yahoo/FantasyPros exports and local analysis artifacts
+data/local/
+
 # Temporary files
 *.tmp
 *.bak
