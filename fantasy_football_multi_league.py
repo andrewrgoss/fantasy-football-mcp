@@ -18,12 +18,17 @@ from src.api import get_access_token, refresh_yahoo_token, set_access_token, yah
 from src.parsers import parse_team_roster, parse_yahoo_free_agent_players
 from src.services import analyze_reddit_sentiment
 from src.auction_prep import (
+    blend_projection_sources,
     evaluate_keeper,
-    apply_fantasypros_projections,
     load_historical_auction_files,
+    load_ffa_custom_rankings_csv,
+    load_ffa_projections_csv,
+    load_fantasypros_csv_signals,
     load_league_profile,
     load_market_values_csv,
     load_player_projections_csv,
+    load_team_environment_json,
+    merge_ffa_rankings,
     project_auction_values,
     summarize_historical_auction,
 )
@@ -375,36 +380,125 @@ async def handle_ff_project_auction_values(arguments: dict) -> dict:
         profile = load_league_profile(arguments.get("profile_path"))
         projections = load_player_projections_csv(str(projection_path), profile)
         fantasypros_meta = {"enabled": False}
-        if arguments.get("use_fantasypros", False):
+        ffa_path = arguments.get("ffa_projection_path") or os.getenv("FFA_PROJECTIONS_PATH")
+        ffa_projections = (
+            load_ffa_projections_csv(str(ffa_path), profile) if ffa_path else None
+        )
+        ffa_rankings_path = arguments.get("ffa_custom_rankings_path") or os.getenv(
+            "FFA_CUSTOM_RANKINGS_PATH"
+        )
+        ffa_rankings = (
+            load_ffa_custom_rankings_csv(str(ffa_rankings_path))
+            if ffa_rankings_path
+            else None
+        )
+        if ffa_projections is not None and ffa_rankings is not None:
+            ffa_projections = merge_ffa_rankings(
+                ffa_projections,
+                ffa_rankings,
+                custom_weight=float(arguments.get("ffa_custom_weight", 0.50)),
+            )
+        fantasypros_signals = {}
+        projection_weights = {"yahoo": 1.0, "fantasypros": 0.0, "ffa": 0.0}
+        fantasypros_rankings_path = arguments.get("fantasypros_rankings_path") or os.getenv(
+            "FANTASYPROS_RANKINGS_PATH"
+        )
+        fantasypros_projection_path = arguments.get("fantasypros_projection_path") or os.getenv(
+            "FANTASYPROS_PROJECTIONS_PATH"
+        )
+        fantasypros_qb_projection_path = arguments.get(
+            "fantasypros_qb_projection_path"
+        ) or os.getenv("FANTASYPROS_QB_PROJECTIONS_PATH")
+        fantasypros_csv_paths = [
+            str(path)
+            for path in (fantasypros_projection_path, fantasypros_qb_projection_path)
+            if path
+        ]
+        # Prefer caller-supplied CSV exports: unlike the free API response,
+        # they can cover the complete player pool and work without a network.
+        if fantasypros_csv_paths or fantasypros_rankings_path:
+            fantasypros_signals = load_fantasypros_csv_signals(
+                fantasypros_csv_paths,
+                rankings_path=str(fantasypros_rankings_path)
+                if fantasypros_rankings_path
+                else None,
+            )
+            fantasypros_meta = {
+                "enabled": True,
+                "mode": "csv",
+                "season": int(arguments.get("fantasypros_season", profile.season)),
+                "scoring": "PPR",
+                "signals": len(fantasypros_signals),
+                "projection_signals": sum(
+                    1
+                    for signal in fantasypros_signals.values()
+                    if signal.get("projected_points") is not None
+                ),
+                "rank_signals": sum(
+                    1 for signal in fantasypros_signals.values() if signal.get("rank") is not None
+                ),
+                "adp_signals": sum(
+                    1 for signal in fantasypros_signals.values() if signal.get("adp") is not None
+                ),
+                "projection_weight": float(arguments.get("fantasypros_weight", 0.30)),
+            }
+        elif arguments.get("use_fantasypros", False):
             requested_scoring = str(arguments.get("fantasypros_scoring", "")).strip().upper()
             reception_points = profile.summary()["reception_points"]
             scoring = requested_scoring or (
                 "PPR" if reception_points >= 0.75 else "HALF" if reception_points >= 0.25 else "STD"
             )
             season = int(arguments.get("fantasypros_season", profile.season))
+            fantasypros_position = arguments.get("fantasypros_position") or "OP"
             client = FantasyProsClient()
-            projection_payload = await client.get_projections(
-                season,
-                scoring=scoring,
-                position=arguments.get("fantasypros_position"),
+            fantasypros_signals = {}
+            projection_positions = (
+                ["QB", "RB", "WR", "TE"]
+                if str(fantasypros_position).upper() in {"OP", "ALL"}
+                else [str(fantasypros_position).upper()]
             )
-            fantasypros_signals = normalize_player_signals(projection_payload)
+            for projection_position in projection_positions:
+                projection_payload = await client.get_projections(
+                    season,
+                    scoring=scoring,
+                    position=projection_position,
+                )
+                projection_signals = normalize_player_signals(
+                    projection_payload, scoring=scoring
+                )
+                for name, projection in projection_signals.items():
+                    target = fantasypros_signals.setdefault(name, {})
+                    for key, value in projection.items():
+                        if value not in (None, ""):
+                            target[key] = value
             if arguments.get("fantasypros_include_rankings", True):
                 ranking_payload = await client.get_consensus_rankings(
                     season,
                     scoring=scoring,
-                    position=arguments.get("fantasypros_position"),
+                    position=fantasypros_position,
                 )
-                ranking_signals = normalize_player_signals(ranking_payload)
+                ranking_signals = normalize_player_signals(ranking_payload, scoring=scoring)
                 for name, ranking in ranking_signals.items():
                     fantasypros_signals.setdefault(name, {}).update(
                         {key: value for key, value in ranking.items() if value not in (None, "")}
                     )
-            projections = apply_fantasypros_projections(
-                projections,
-                fantasypros_signals,
-                weight=float(arguments.get("fantasypros_weight", 0.30)),
-            )
+                # The consensus endpoint can be limited to a small ranked
+                # subset on lower-volume keys.  The player metadata endpoint
+                # exposes the broader ECR/ADP fields (including scoring-
+                # specific rank_adp_ppr/rank_ecr_ppr values), so merge it as
+                # supplemental context without overwriting non-empty
+                # projection signals.
+                player_payload = await client.get_players(
+                    sport="nfl",
+                    include_ecr=True,
+                    show="pos_rank",
+                )
+                player_signals = normalize_player_signals(player_payload, scoring=scoring)
+                for name, metadata in player_signals.items():
+                    target = fantasypros_signals.setdefault(name, {})
+                    for key, value in metadata.items():
+                        if value not in (None, ""):
+                            target[key] = value
             fantasypros_meta = {
                 "enabled": True,
                 "season": season,
@@ -412,11 +506,48 @@ async def handle_ff_project_auction_values(arguments: dict) -> dict:
                 "signals": len(fantasypros_signals),
                 "projection_weight": float(arguments.get("fantasypros_weight", 0.30)),
             }
+        if ffa_projections is not None:
+            projection_weights = {
+                "ffa": float(arguments.get("ffa_weight", 0.40)),
+                "yahoo": float(arguments.get("yahoo_weight", 0.30)),
+                "fantasypros": float(arguments.get("fantasypros_weight", 0.30)),
+            }
+            projections = blend_projection_sources(
+                projections,
+                ffa_players=ffa_projections,
+                fantasypros_signals=fantasypros_signals,
+                ffa_weight=float(arguments.get("ffa_weight", 0.40)),
+                yahoo_weight=float(arguments.get("yahoo_weight", 0.30)),
+                fantasypros_weight=float(arguments.get("fantasypros_weight", 0.30)),
+            )
+        elif fantasypros_signals:
+            # Blend either downloaded CSV signals or explicitly requested API
+            # signals when no FFA projection export is supplied.
+            projection_weights = {
+                "yahoo": 1.0 - float(arguments.get("fantasypros_weight", 0.30)),
+                "fantasypros": float(arguments.get("fantasypros_weight", 0.30)),
+                "ffa": 0.0,
+            }
+            projections = blend_projection_sources(
+                projections,
+                fantasypros_signals=fantasypros_signals,
+                yahoo_weight=1.0 - float(arguments.get("fantasypros_weight", 0.30)),
+                fantasypros_weight=float(arguments.get("fantasypros_weight", 0.30)),
+                ffa_weight=0.0,
+            )
         market_path = arguments.get("market_values_path")
         market_values = load_market_values_csv(str(market_path)) if market_path else None
         historical_path = arguments.get("historical_path")
         historical_records = (
             load_historical_auction_files([str(historical_path)]) if historical_path else None
+        )
+        team_environment_path = arguments.get("team_environment_path") or os.getenv(
+            "TEAM_ENVIRONMENT_PATH"
+        )
+        team_environment = (
+            load_team_environment_json(str(team_environment_path))
+            if team_environment_path
+            else None
         )
         values = project_auction_values(
             projections,
@@ -426,6 +557,14 @@ async def handle_ff_project_auction_values(arguments: dict) -> dict:
             sentiment=arguments.get("sentiment"),
             market_weight=float(arguments.get("market_weight", 0.25)),
             historical_weight=float(arguments.get("historical_weight", 0.15)),
+            team_environment=team_environment,
+            max_sos_adjustment=float(arguments.get("max_sos_adjustment", 0.025)),
+            max_offensive_line_adjustment=float(
+                arguments.get("max_offensive_line_adjustment", 0.025)
+            ),
+            max_team_environment_adjustment=float(
+                arguments.get("max_team_environment_adjustment", 0.025)
+            ),
             max_sentiment_adjustment=float(arguments.get("max_sentiment_adjustment", 0.08)),
             max_price_fraction=float(arguments.get("max_price_fraction", 0.35)),
         )
@@ -434,6 +573,21 @@ async def handle_ff_project_auction_values(arguments: dict) -> dict:
             "status": "success",
             "profile": profile.summary(include_identity=False),
             "fantasypros": fantasypros_meta,
+            "ffa": {
+                "enabled": ffa_projections is not None,
+                "projection_count": len(ffa_projections or []),
+                "custom_rankings_enabled": ffa_rankings is not None,
+                "custom_rankings_count": len(ffa_rankings or []),
+                "custom_rankings_weight": float(
+                    arguments.get("ffa_custom_weight", 0.50)
+                ),
+                "weight": float(arguments.get("ffa_weight", 0.40)),
+            },
+            "projection_source_weights": projection_weights,
+            "team_environment": {
+                "enabled": team_environment is not None,
+                "team_count": len(team_environment or {}),
+            },
             "player_count": len(values),
             "values": [value.as_dict() for value in values[:limit]],
         }
@@ -991,7 +1145,8 @@ async def list_tools() -> list[Tool]:
             name="ff_project_auction_values",
             description=(
                 "Calculate league-specific auction values from a local player-projection CSV, "
-                "optional market values, and optional sentiment signals."
+                "optional market values, FFA SOS, offensive-line rank, Vegas win totals, "
+                "and optional sentiment signals."
             ),
             inputSchema={
                 "type": "object",
@@ -999,6 +1154,26 @@ async def list_tools() -> list[Tool]:
                     "projection_path": {
                         "type": "string",
                         "description": "Path to a player projection CSV",
+                    },
+                    "ffa_projection_path": {
+                        "type": "string",
+                        "description": "Optional path to an FFA detailed-projections CSV; FFA/Yahoo/FantasyPros default to 40/30/30",
+                    },
+                    "ffa_custom_rankings_path": {
+                        "type": "string",
+                        "description": "Optional path to an FFA custom-rankings CSV",
+                    },
+                    "fantasypros_projection_path": {
+                        "type": "string",
+                        "description": "Optional local FantasyPros FLX/PPR projection CSV; bypasses the limited API",
+                    },
+                    "fantasypros_qb_projection_path": {
+                        "type": "string",
+                        "description": "Optional local FantasyPros QB/PPR projection CSV; bypasses the limited API",
+                    },
+                    "fantasypros_rankings_path": {
+                        "type": "string",
+                        "description": "Optional local FantasyPros draft-rankings CSV; bypasses the limited API",
                     },
                     "profile_path": {
                         "type": "string",
@@ -1011,6 +1186,10 @@ async def list_tools() -> list[Tool]:
                     "historical_path": {
                         "type": "string",
                         "description": "Optional path to a historical auction-results CSV or directory of CSVs",
+                    },
+                    "team_environment_path": {
+                        "type": "string",
+                        "description": "Optional local JSON with team offensive-line ranks and Vegas win totals",
                     },
                     "sentiment": {
                         "type": "object",
@@ -1041,7 +1220,22 @@ async def list_tools() -> list[Tool]:
                     },
                     "fantasypros_weight": {
                         "type": "number",
-                        "description": "Weight for FantasyPros projected points from 0 to 1 (default: 0.30)",
+                        "description": "FantasyPros projection-source weight from 0 to 1 (default: 0.30)",
+                        "default": 0.30,
+                    },
+                    "ffa_weight": {
+                        "type": "number",
+                        "description": "FFA projection-source weight from 0 to 1 (default: 0.40 when FFA data is supplied)",
+                        "default": 0.40,
+                    },
+                    "ffa_custom_weight": {
+                        "type": "number",
+                        "description": "Weight of custom FFA ranking projections inside the FFA source (default: 0.50)",
+                        "default": 0.50,
+                    },
+                    "yahoo_weight": {
+                        "type": "number",
+                        "description": "Yahoo projection-source weight from 0 to 1 (default: 0.30 when FFA data is supplied)",
                         "default": 0.30,
                     },
                     "market_weight": {
@@ -1051,8 +1245,23 @@ async def list_tools() -> list[Tool]:
                     },
                     "historical_weight": {
                         "type": "number",
-                        "description": "Weight for matched historical player prices from 0 to 1 (default: 0.15)",
+                        "description": "Weight for position-slot historical auction prices from 0 to 1 (default: 0.15)",
                         "default": 0.15,
+                    },
+                    "max_sos_adjustment": {
+                        "type": "number",
+                        "description": "Maximum FFA SOS adjustment fraction from 0 to 0.10 (default: 0.025)",
+                        "default": 0.025,
+                    },
+                    "max_offensive_line_adjustment": {
+                        "type": "number",
+                        "description": "Maximum RB offensive-line adjustment fraction from 0 to 0.10 (default: 0.025)",
+                        "default": 0.025,
+                    },
+                    "max_team_environment_adjustment": {
+                        "type": "number",
+                        "description": "Maximum RB Vegas win-total adjustment fraction from 0 to 0.10 (default: 0.025)",
+                        "default": 0.025,
                     },
                     "max_sentiment_adjustment": {
                         "type": "number",

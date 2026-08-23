@@ -1,0 +1,7 @@
+PLAYER_NAME,TEAM,POSITION,LEAGUE_VALUE,PROJ_VALUE,AVG_COST
+Example Quarterback,BUF,QB,$12,$11,$13.4
+Example Receiving Back,PHI,RB,$48,$46,$51.2
+Example Early Down Back,CLE,RB,$16,$15,$17.1
+Example Alpha Receiver,LAR,WR,$45,$44,$48.0
+Example Volume Receiver,NO,WR,$22,$21,$23.5
+Example Tight End,CHI,TE,$18,$17,$19.2

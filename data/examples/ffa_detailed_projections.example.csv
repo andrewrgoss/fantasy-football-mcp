@@ -1,0 +1,5 @@
+Player,Pos,Team,Games,Pass Att,Pass Cmp,Pass Yds,Pass TDs,INTs,Carries,Rush Yds,Rush TDs,Targets,Receptions,Rec Yds,Rec TDs,PPR ADP,HPPR ADP,Std ADP
+Example Quarterback,QB,BUF,17,590,390,4250,32,11,70,360,4,0,0,0,0,80,75,70
+Example Receiving Back,RB,PHI,17,0,0,0,0,0,235,1210,11,88,72,575,4,5,7,9
+Example Alpha Receiver,WR,LAR,17,0,0,0,0,0,4,25,0,142,106,1450,10,7,8,9
+Example Tight End,TE,CHI,17,0,0,0,0,0,0,0,0,112,83,940,7,38,42,47

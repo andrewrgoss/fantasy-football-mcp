@@ -25,6 +25,7 @@ test_*.py
 *_test.py
 
 # IDE
+.DS_Store
 .vscode/
 .idea/
 .qoder/

@@ -253,6 +253,7 @@ class TestRefreshYahooToken:
     @pytest.mark.asyncio
     async def test_refresh_token_missing_credentials(self, monkeypatch):
         """Test token refresh with missing credentials."""
+        monkeypatch.delenv("YAHOO_CLIENT_ID", raising=False)
         monkeypatch.delenv("YAHOO_CONSUMER_KEY", raising=False)
 
         result = await refresh_yahoo_token()

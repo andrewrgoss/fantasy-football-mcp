@@ -1,188 +1,97 @@
-# Reddit API Credentials Setup Guide
+# Reddit Data API Setup
 
-This guide covers the approval and credential steps for the Fantasy Football MCP
-Server's local, read-only sentiment-analysis feature.
+Reddit sentiment is optional. The offline auction workflow and Yahoo tools do
+not require Reddit.
 
-## Current Reddit access requirement
+Reddit requires explicit approval for this external PRAW/MCP use case. Review
+the [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy),
+[Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki),
+and [Data API Terms](https://redditinc.com/policies/data-api-terms) before making
+requests. Submit the
+[Data API access form](https://support.reddithelp.com/hc/en-us/requests/new?ticket_form_id=14868593862164).
 
-Reddit now requires explicit approval before an application accesses Reddit data
-through the Data API. Current policy also calls for app registration and a
-developer profile. Review Reddit's [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy)
-and [Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki)
-before requesting access.
+Do not call Reddit with an unapproved client. Creating a legacy OAuth app does
+not itself grant Data API approval.
 
-This repository is an external, local Python/MCP application that uses PRAW; it
-is not a Devvit app running on Reddit or an academic research project. Use
-Reddit's [Data API access request form](https://support.reddithelp.com/hc/en-us/requests/new?ticket_form_id=14868593862164)
-and explain that distinction if the form asks why the use case cannot be built on
-Devvit. Do not make API calls until Reddit explicitly approves the request.
+## Copy-ready access-request answers
 
-For the request, describe the intended use accurately: one personal user, read-only
-sentiment analysis for fantasy football discussions, initially limited to
-`r/fantasyfootball` and `r/DynastyFF`, with no other App Users and no posting,
-voting, messaging, moderation, resale, redistribution, profiling, off-platform
-identity matching, or model training. The tool uses recent posts/comments to
-produce aggregate sentiment, keeps credentials private, filters deleted content,
-and honors Reddit removals and API rate limits. See the [Reddit data-handling
-statement](REDDIT_DATA_HANDLING.md) for the implementation details.
+Replace bracketed identity fields with truthful information.
 
-## Overview
+- **What do you need assistance with?** `Data Access Request`
+- **Your email address:** `[your email address]`
+- **Which role best describes your reason for requesting API access?** `I'm a developer`
+- **What is your inquiry?** `I'm a developer and want to build a Reddit App that does not work in the Devvit ecosystem.`
+- **Reddit account name:** `[your Reddit username]` without `u/`
+- **Provide a link to source code or platform:** the public URL of your fork
+- **Subreddits:** `r/fantasyfootball` and `r/DynastyFF` initially
+- **Operating username:** the same Reddit username
+- **Attachments:** none required unless Reddit requests them
 
-The app uses Reddit's API (via the PRAW library) to analyze fantasy football player sentiment from:
-- r/fantasyfootball
-- r/DynastyFF
+**Benefit/purpose for Redditors:**
 
-## Step 1: Request Reddit Data API access
+```text
+This is a private, single-user decision-support tool for one Redditor. It summarizes public fantasy-football discussion so I can make better personal fantasy football draft, roster, matchup, and waiver decisions. It is not academic research, has no other App Users, and does not act on behalf of other Redditors or change anything on Reddit.
+```
 
-Submit the access request before attempting to use the credentials. The current
-Reddit policy says approval is required and that apps must have a clearly defined
-purpose and limited scope. Do not create a second request for the same use case;
-reply to an existing ticket if Reddit asks for clarification.
+**Detailed application description:**
 
-## Step 2: Register the Reddit application after approval
+```text
+Fantasy Football MCP is a personal, single-user, read-only local MCP server, not academic research or a public bot. After Reddit approves access, it will use one registered OAuth client through PRAW to retrieve recent public posts and comments matching requested fantasy-football player names, initially limited to r/fantasyfootball and r/DynastyFF. It will calculate aggregate sentiment and engagement locally for my own fantasy football draft, roster, matchup, and waiver analysis. It has no other App Users and will not post, vote, comment, message, moderate, follow, join communities, profile Redditors, infer sensitive characteristics, match users to off-platform identities, or otherwise change Reddit. It will not sell, redistribute, publish raw content, or use Reddit content for model training. No author identifiers will be retained, deleted content will be filtered, raw content will be held only in memory for the current analysis, and the client will honor OAuth, rate limits, content-removal requirements, and applicable Reddit terms.
+```
 
-Follow the app-registration and developer-profile instructions Reddit provides
-with an approved request. Use a descriptive name such as `Fantasy Football MCP`
-and identify it as a private, single-user, read-only local client.
+**Why Devvit does not fit:**
 
-If Reddit explicitly directs you to the legacy app form at
-https://www.reddit.com/prefs/apps, use a **script** client with redirect URI
-`http://localhost:8080`; otherwise, do not substitute the legacy flow. Creating a
-client does not itself grant Data API approval, so do not make API calls until
-Reddit has approved the request.
+```text
+Devvit is designed for apps hosted in Reddit communities. This use case is a private, local MCP server that combines read-only Reddit data with other permitted fantasy-football data and is invoked from a local assistant. It requires a local Python/PRAW process and OAuth credentials, does not need a Reddit-hosted user interface or subreddit installation, and must keep the workflow and temporary data local. Devvit does not support this cross-service, personal, local-only MCP workflow.
+```
 
-## Step 3: Get Your Credentials
+## If the request is denied without specifics
 
-After creating the app, you'll see a page with your app details:
+Generic denials may cite the Responsible Builder Policy without identifying a
+missing requirement. Reply on the existing ticket rather than opening duplicate
+requests. Remove the bracketed ticket placeholder before sending:
 
-1. **Client ID** (under your app name)
-   - This is a string that looks like: `abc123def456ghi789`
-   - Copy this value - this is your `REDDIT_CLIENT_ID`
+```text
+Hello Reddit Data Team,
 
-2. **Secret** (shown as "secret" next to your app)
-   - This is a longer string that looks like: `xyz789abc123def456ghi789jkl012mno345`
-   - Click "edit" or "reveal" to see it if hidden
-   - Copy this value - this is your `REDDIT_CLIENT_SECRET`
+I am following up on ticket [ticket number]. Could you identify the specific Responsible Builder Policy requirement that caused the denial?
 
-3. **Username** (optional but recommended)
-   - Your Reddit username (the one you're logged in as)
-   - This is used in the user agent string for API requests
-   - This is your `REDDIT_USERNAME`
+This is not academic research, a commercial product, a public bot, or a service for other Redditors. It is a private, single-user local fantasy-football decision-support tool that I run for my own draft preparation. The public GitHub repository contains source code only; it does not host the app, distribute Reddit data, or expose credentials.
 
-## Step 4: Add Credentials to Your .env File
+If approved, one registered OAuth client would read only recent public posts and comments matching a requested player, initially limited to r/fantasyfootball and r/DynastyFF. It would not post, comment, vote, message, moderate, join communities, follow users, access private data, or automate any Reddit account. There would be no other App Users.
 
-Add the following lines to your `.env` file in the project root:
+Sentiment would be calculated locally using deterministic TextBlob and keyword scoring. No Reddit content would be sent to a hosted model or used for model training. The tool would not profile Redditors, infer sensitive characteristics, re-identify users, or match Reddit accounts to off-platform identities. It would retain no usernames, author IDs, or profiles, keep content only for the current analysis, remove deleted content, and honor OAuth, rate limits, and retention requirements.
+
+Reddit data would be combined locally with my own league settings and other permitted fantasy-football data solely for personal, non-commercial use. No Reddit content would be sold, redistributed, or published.
+
+Devvit is not suitable because this has no Reddit-hosted UI, subreddit installation, or Reddit-side user interaction. It is a local Python/MCP process that reads Reddit alongside other permitted fantasy-football data.
+
+Source: [public URL of your fork]
+
+If a developer profile, app label, privacy statement, narrower subreddit scope, or another specific requirement is needed, please tell me exactly what is missing so I can correct it.
+```
+
+## Register credentials after approval
+
+Follow the app-registration and developer-profile instructions Reddit provides.
+If Reddit explicitly directs you to the legacy app form, create a **script**
+client and use `http://localhost:8080` as the redirect URI. Do not assume the
+legacy form bypasses approval.
+
+Store approved credentials only in `.env`:
 
 ```env
-# Reddit API Credentials (for sentiment analysis)
-REDDIT_CLIENT_ID=your_client_id_here
-REDDIT_CLIENT_SECRET=your_client_secret_here
+REDDIT_CLIENT_ID=your_client_id
+REDDIT_CLIENT_SECRET=your_client_secret
 REDDIT_USERNAME=your_reddit_username
 ```
 
-**Example:**
-```env
-REDDIT_CLIENT_ID=abc123def456ghi789
-REDDIT_CLIENT_SECRET=xyz789abc123def456ghi789jkl012mno345
-REDDIT_USERNAME=myusername
-```
+Restart the MCP server, then invoke `ff_analyze_reddit_sentiment`. The tool
+should report unavailability when approval or credentials are absent; it must
+not fabricate a neutral sentiment result.
 
-## Step 5: Verify Installation
+## Data handling
 
-Make sure the required packages are installed:
-
-```bash
-pip install praw textblob
-```
-
-Or if using the requirements file:
-
-```bash
-pip install -r requirements.txt
-```
-
-## Step 6: Test the Configuration
-
-The Reddit API will be automatically initialized when you use features that require it, such as:
-
-- `ff_analyze_reddit_sentiment` - Analyze Reddit sentiment for players
-
-If credentials are missing or incorrect, the app will:
-- Log a warning message
-- Continue operating without Reddit sentiment analysis
-- Use fallback sentiment analysis methods
-
-## Important Notes
-
-### Rate Limits and data handling
-- Reddit documents a limit of 100 queries per minute per OAuth client for eligible free Data API usage.
-- The app includes rate limiting and error handling, but your approved limits and terms control.
-- If you hit a limit, stop and allow the limit window to reset; do not attempt to bypass it.
-- Do not retain or redistribute deleted Reddit content. The analyzer filters
-  removed posts/comments and deleted authors before scoring, returns aggregate
-  signals rather than raw text, and clears in-memory content after each request.
-- Do not retain author names, author IDs, profiles, URLs, or other
-  author-identifying metadata. Keep credentials and temporary data local.
-
-### App Type
-- Reddit's current policy requires app registration and a developer profile. Follow
-  the registration instructions Reddit provides with an approved request.
-- Do not assume that the legacy OAuth client form alone grants access. If Reddit
-  redirects you to Devvit or the legacy app form refuses to create an app, do not
-  repeatedly resubmit. Use the Data API access request and wait for Reddit's
-  response.
-
-### Security
-- **Never commit your `.env` file** to version control
-- Keep your `REDDIT_CLIENT_SECRET` private
-- The username is optional but helps identify your app to Reddit
-
-### Troubleshooting
-
-**"Reddit API credentials not configured"**
-- Check that all three variables are in your `.env` file
-- Verify there are no extra spaces or quotes around the values
-- Restart the MCP server after adding credentials
-
-**"Reddit API connection test failed"**
-- Verify your Client ID and Secret are correct
-- Check that you selected "script" as the app type
-- Ensure you're using the correct Reddit account
-
-**"PRAW not available"**
-- Run: `pip install praw textblob`
-- Check that you're in the correct Python environment
-
-## Optional: Verify Reddit API Access
-
-You can test your credentials manually with this Python snippet:
-
-```python
-import os
-from dotenv import load_dotenv
-import praw
-
-load_dotenv()
-
-reddit = praw.Reddit(
-    client_id=os.getenv("REDDIT_CLIENT_ID"),
-    client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
-    user_agent=f"fantasy-football-mcp:v1.0 by /u/{os.getenv('REDDIT_USERNAME', 'unknown')}"
-)
-
-# Test connection
-try:
-    subreddit = reddit.subreddit("fantasyfootball")
-    print(f"✅ Connected! Subreddit has {subreddit.subscribers} subscribers")
-except Exception as e:
-    print(f"❌ Connection failed: {e}")
-```
-
-## What Happens Without Reddit Credentials?
-
-The app will still function normally, but:
-- Reddit sentiment analysis will be unavailable
-- The `ff_analyze_reddit_sentiment` tool will return fallback results
-- You'll see warnings in the logs about missing credentials
-
-All other features (lineup optimization, draft assistance, etc.) work independently of Reddit API.
+The implementation returns aggregate signals, filters removed/deleted content,
+does not retain author identifiers, and clears raw content after the request.
+See [REDDIT_DATA_HANDLING.md](REDDIT_DATA_HANDLING.md) for the detailed boundary.

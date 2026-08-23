@@ -53,11 +53,101 @@ def _first(row: Mapping[str, Any], names: Iterable[str]) -> Any:
     for name in names:
         if name in row and row[name] not in (None, ""):
             return row[name]
+    for container_name in ("stats", "rank"):
+        nested = row.get(container_name)
+        if isinstance(nested, Mapping):
+            for name in names:
+                if name in nested and nested[name] not in (None, ""):
+                    return nested[name]
     return None
 
 
-def normalize_player_signals(payload: Any) -> Dict[str, Dict[str, Any]]:
-    """Normalize FantasyPros ranking/projection rows keyed by player name."""
+def normalize_player_signals(
+    payload: Any,
+    *,
+    scoring: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Normalize FantasyPros ranking/projection rows keyed by player name.
+
+    The projections endpoint returns scoring totals inside a nested ``stats``
+    object (for example ``points_ppr``), while consensus rankings use flat
+    fields.  Support both response shapes and select the requested scoring
+    total when one is supplied.
+    """
+
+    scoring_code = str(scoring or "").strip().upper()
+    if scoring_code in {"PPR", "FULL", "FULL_PPR"}:
+        point_names = (
+            "points_ppr",
+            "projected_points",
+            "fantasy_points",
+            "proj_points",
+            "fpts_ppr",
+            "fpts",
+            "points",
+        )
+    elif scoring_code in {"HALF", "HPPR", "HALF_PPR"}:
+        point_names = (
+            "points_half",
+            "projected_points",
+            "fantasy_points",
+            "proj_points",
+            "fpts_half",
+            "fpts",
+            "points",
+        )
+    elif scoring_code in {"STD", "STANDARD", "NONPPR"}:
+        point_names = (
+            "points",
+            "projected_points",
+            "fantasy_points",
+            "proj_points",
+            "fpts",
+            "points_ppr",
+        )
+    else:
+        point_names = (
+            "projected_points",
+            "fantasy_points",
+            "proj_points",
+            "fpts_ppr",
+            "points_ppr",
+            "points_half",
+            "fpts",
+            "points",
+        )
+
+    if scoring_code in {"PPR", "FULL", "FULL_PPR"}:
+        rank_names = (
+            "rank_ecr_ppr",
+            "rank_ecr",
+            "rank",
+            "ecr",
+            "overall_rank",
+        )
+        adp_names = (
+            "rank_adp_ppr",
+            "rank_adp",
+            "adp",
+            "average_draft_position",
+        )
+    elif scoring_code in {"HALF", "HPPR", "HALF_PPR"}:
+        rank_names = (
+            "rank_ecr_half",
+            "rank_ecr",
+            "rank",
+            "ecr",
+            "overall_rank",
+        )
+        adp_names = (
+            "rank_adp_half",
+            "rank_adp",
+            "adp",
+            "average_draft_position",
+        )
+    else:
+        rank_names = ("rank_ecr", "rank", "ecr", "overall_rank")
+        adp_names = ("rank_adp", "adp", "average_draft_position")
 
     signals: Dict[str, Dict[str, Any]] = {}
     for row in _rows(payload):
@@ -67,23 +157,31 @@ def normalize_player_signals(payload: Any) -> Dict[str, Dict[str, Any]]:
         projection = _number(
             _first(
                 row,
-                (
-                    "projected_points",
-                    "fantasy_points",
-                    "proj_points",
-                    "fpts_ppr",
-                    "fpts",
-                    "points",
-                ),
+                point_names,
             )
         )
         signals[str(name).strip().casefold()] = {
             "name": str(name).strip(),
-            "team": str(_first(row, ("player_team_id", "team", "team_abbr")) or "").strip(),
-            "position": str(_first(row, ("position", "pos")) or "").strip().upper(),
+            "team": str(
+                _first(row, ("player_team_id", "team_id", "team", "team_abbr")) or ""
+            ).strip(),
+            "position": str(
+                _first(
+                    row,
+                    (
+                        "position",
+                        "pos",
+                        "position_id",
+                        "player_position_id",
+                        "player_positions",
+                        "player_eligibility",
+                    ),
+                )
+                or ""
+            ).strip().upper(),
             "projected_points": projection,
-            "rank": _number(_first(row, ("rank_ecr", "rank", "ecr", "overall_rank"))),
-            "adp": _number(_first(row, ("adp", "average_draft_position"))),
+            "rank": _number(_first(row, rank_names)),
+            "adp": _number(_first(row, adp_names)),
             "tier": _number(_first(row, ("tier", "tier_number"))),
         }
     return signals
@@ -99,7 +197,10 @@ class FantasyProsClient:
         base_url: Optional[str] = None,
         timeout_seconds: float = 30.0,
     ) -> None:
-        self.api_key = (api_key or os.getenv("FANTASYPROS_API_KEY", "")).strip()
+        # `None` means "read the environment"; an explicit empty string means
+        # "disabled" and must never fall through to a developer's local key.
+        raw_api_key = os.getenv("FANTASYPROS_API_KEY", "") if api_key is None else api_key
+        self.api_key = raw_api_key.strip()
         self.base_url = (base_url or os.getenv("FANTASYPROS_API_BASE_URL", DEFAULT_BASE_URL)).rstrip(
             "/"
         )
@@ -159,6 +260,20 @@ class FantasyProsClient:
         if position and position.upper() != "ALL":
             params["position"] = position.upper()
         return await self.get_json(f"/nfl/{int(season)}/consensus-rankings", params)
+
+    async def get_players(
+        self,
+        *,
+        sport: str = "nfl",
+        include_ecr: bool = True,
+        show: str = "pos_rank",
+    ) -> Any:
+        """Return FantasyPros player metadata, including ECR and ADP fields."""
+
+        params: Dict[str, Any] = {"show": show}
+        if include_ecr:
+            params["ecr"] = "included"
+        return await self.get_json(f"/{sport.strip().lower()}/players", params)
 
 
 __all__ = [

@@ -14,6 +14,8 @@ def mock_env_vars(monkeypatch):
     test_env = {
         "YAHOO_ACCESS_TOKEN": "test_access_token_12345",
         "YAHOO_REFRESH_TOKEN": "test_refresh_token_67890",
+        "YAHOO_CLIENT_ID": "test_client_id",
+        "YAHOO_CLIENT_SECRET": "test_client_secret",
         "YAHOO_CONSUMER_KEY": "test_consumer_key",
         "YAHOO_CONSUMER_SECRET": "test_consumer_secret",
         "YAHOO_GUID": "TEST_GUID_12345",
@@ -43,9 +45,9 @@ def mock_yahoo_league_response() -> Dict[str, Any]:
                                                     "league": [
                                                         [
                                                             {
-                                                                "league_key": "461.l.61410",
-                                                                "league_id": "61410",
-                                                                "name": "Anyone But Andy",
+                                                "league_key": "461.l.12345",
+                                                "league_id": "12345",
+                                                "name": "Example League",
                                                                 "season": "2025",
                                                                 "num_teams": 10,
                                                                 "current_week": 1,
@@ -75,7 +77,7 @@ def mock_yahoo_roster_response() -> Dict[str, Any]:
     return {
         "fantasy_content": {
             "team": [
-                [{"team_key": "461.l.61410.t.1"}],
+                [{"team_key": "461.l.12345.t.1"}],
                 {
                     "roster": {
                         "0": {
@@ -138,7 +140,7 @@ def mock_yahoo_free_agents_response() -> Dict[str, Any]:
     return {
         "fantasy_content": {
             "league": [
-                [{"league_key": "461.l.61410"}],
+                [{"league_key": "461.l.12345"}],
                 {
                     "players": {
                         "0": {
@@ -195,7 +197,7 @@ def mock_yahoo_standings_response() -> Dict[str, Any]:
     return {
         "fantasy_content": {
             "league": [
-                [{"league_key": "461.l.61410"}],
+                [{"league_key": "461.l.12345"}],
                 {
                     "standings": [
                         {

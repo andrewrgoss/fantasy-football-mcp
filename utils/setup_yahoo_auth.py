@@ -38,8 +38,8 @@ if not CLIENT_ID or not CLIENT_SECRET:
     sys.exit(1)
 
 print("✅ Found Yahoo credentials")
-print(f"   Client ID: {CLIENT_ID[:30]}...")
-print(f"   Client Secret: {CLIENT_SECRET[:10]}...")
+# Never echo even partial credentials; terminal output is commonly persisted.
+print("   Found Yahoo Client ID and Client Secret")
 print()
 
 def preflight_fantasy_access(access_token):

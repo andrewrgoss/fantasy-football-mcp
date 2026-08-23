@@ -26,10 +26,11 @@ NOT_PROVISIONED_ERROR = (
 
 
 def get_access_token() -> str:
-    """Get the current access token."""
+    """Get the current access token, honoring an environment update."""
     global _YAHOO_ACCESS_TOKEN
-    if _YAHOO_ACCESS_TOKEN is None:
-        _YAHOO_ACCESS_TOKEN = os.getenv("YAHOO_ACCESS_TOKEN")
+    environment_token = os.getenv("YAHOO_ACCESS_TOKEN")
+    if environment_token is not None and environment_token != _YAHOO_ACCESS_TOKEN:
+        _YAHOO_ACCESS_TOKEN = environment_token
     return _YAHOO_ACCESS_TOKEN or ""
 
 

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Andrew Goss"}
 ]
 keywords = [
     "fantasy-football",
@@ -64,13 +64,22 @@ dev = [
 fantasy-football-mcp = "src.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/fantasy-football-mcp"
-Documentation = "https://github.com/yourusername/fantasy-football-mcp/wiki"
-Repository = "https://github.com/yourusername/fantasy-football-mcp.git"
-Issues = "https://github.com/yourusername/fantasy-football-mcp/issues"
+Homepage = "https://github.com/andrewrgoss/fantasy-football-mcp"
+Documentation = "https://github.com/andrewrgoss/fantasy-football-mcp/tree/main/docs"
+Repository = "https://github.com/andrewrgoss/fantasy-football-mcp.git"
+Issues = "https://github.com/andrewrgoss/fantasy-football-mcp/issues"
 
 [tool.setuptools]
-packages = ["src"]
+py-modules = [
+    "fantasy_football_multi_league",
+    "fastmcp_server",
+    "lineup_optimizer",
+    "matchup_analyzer",
+    "sleeper_api",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
 
 [tool.setuptools.package-data]
 src = ["*.json", "*.yaml", "*.yml"]
